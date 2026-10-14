@@ -1,0 +1,599 @@
+<script>
+  let etapaAtualGlobal = 1; // 1: Processo, 2: Solicitação, 3: NF
+  let stepSolicitacao = 1;
+  let arquivoSolicitacao = null;
+  let processoCadastradoAtual = "";
+
+  document.addEventListener("DOMContentLoaded", function() {
+    if (typeof carregarDashboardTiposEntrada === 'function') carregarDashboardTiposEntrada();
+  });
+
+  function abrirModalNovaEntrada() {
+    etapaAtualGlobal = 1;
+    stepSolicitacao = 1;
+    arquivoSolicitacao = null;
+    processoCadastradoAtual = "";
+
+    const modalElement = document.getElementById('modalNovaEntrada');
+    if (!modalElement) return alert("Modal de entrada não encontrado.");
+
+    const bs = window.bootstrap || bootstrap;
+    modalInstance = bs.Modal.getOrCreateInstance(modalElement);
+
+    resetarFormularioSolicitacao();
+    atualizarUISolicitacao();
+    modalInstance.show();
+  }
+
+  function resetarFormularioSolicitacao() {
+    if (document.getElementById('inputProcesso')) document.getElementById('inputProcesso').value = '';
+    if (document.getElementById('inputDataEnvio')) document.getElementById('inputDataEnvio').value = '';
+    if (document.getElementById('selectTipoEntrada')) document.getElementById('selectTipoEntrada').value = '';
+    if (document.getElementById('dynamicFieldsContainer')) document.getElementById('dynamicFieldsContainer').innerHTML = '';
+    
+    const stepDecisao = document.getElementById('stepDecisaoSolicitacao');
+    if (stepDecisao) stepDecisao.classList.add('d-none');
+
+    resetFileSolicitacao();
+  }
+
+  function atualizarUISolicitacao() {
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById('step' + i + 'Content');
+      if (el) el.classList.add('d-none');
+    }
+
+    const stepDecisao = document.getElementById('stepDecisaoSolicitacao');
+    if (stepDecisao) stepDecisao.classList.add('d-none');
+
+    const footerNav = document.getElementById('modalFooterNav');
+    if (footerNav) footerNav.classList.remove('d-none');
+
+    const badge = document.getElementById('modalStageBadge');
+
+    if (etapaAtualGlobal === 1) {
+      if (badge) { badge.className = "badge bg-primary me-2"; badge.innerText = "Etapa 1"; }
+      document.getElementById('step1Content')?.classList.remove('d-none');
+      document.getElementById('stepTitle').innerText = "Cadastro do Processo";
+      
+      const btnAnterior = document.getElementById('btnAnterior');
+      if (btnAnterior) btnAnterior.disabled = true;
+
+      const btnProximo = document.getElementById('btnProximo');
+      if (btnProximo) {
+        btnProximo.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i> Salvar Processo';
+        btnProximo.className = 'btn btn-success fw-bold';
+        btnProximo.onclick = proximoPassoSolicitacao;
+      }
+
+    } else if (etapaAtualGlobal === 2) {
+      if (badge) { badge.className = "badge bg-info text-dark me-2"; badge.innerText = "Etapa 2"; }
+
+      if (stepSolicitacao === 2) {
+        document.getElementById('step2Content')?.classList.remove('d-none');
+        document.getElementById('stepTitle').innerText = "Upload da Solicitação de Tombamento";
+
+        const btnAnterior = document.getElementById('btnAnterior');
+        if (btnAnterior) btnAnterior.disabled = false;
+
+        const btnProximo = document.getElementById('btnProximo');
+        if (btnProximo) {
+          btnProximo.innerHTML = 'Analisar PDF <i class="fa-solid fa-wand-magic-sparkles ms-1"></i>';
+          btnProximo.className = 'btn btn-primary fw-bold';
+          btnProximo.onclick = proximoPassoSolicitacao;
+        }
+
+      } else if (stepSolicitacao === 3) {
+        document.getElementById('step3Content')?.classList.remove('d-none');
+        document.getElementById('stepTitle').innerText = "Conferência da Solicitação";
+
+        const btnAnterior = document.getElementById('btnAnterior');
+        if (btnAnterior) btnAnterior.disabled = false;
+
+        const btnProximo = document.getElementById('btnProximo');
+        if (btnProximo) {
+          btnProximo.innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i> Salvar Solicitação';
+          btnProximo.className = 'btn btn-success fw-bold';
+          btnProximo.onclick = finalizarSolicitacao;
+        }
+      }
+    }
+  }
+
+  function proximoPassoGlobal() {
+    if (etapaAtualGlobal === 1) {
+      proximoPassoSolicitacao();
+    } else if (etapaAtualGlobal === 2) {
+      proximoPassoSolicitacao();
+    } else if (etapaAtualGlobal === 3) {
+      proximoPassoNF();
+    }
+  }
+
+  function passoAnteriorGlobal() {
+    if (etapaAtualGlobal === 3) {
+      passoAnteriorNF();
+    } else if (etapaAtualGlobal === 2) {
+      if (stepSolicitacao > 2) {
+        stepSolicitacao--;
+        atualizarUISolicitacao();
+      } else {
+        etapaAtualGlobal = 1;
+        atualizarUISolicitacao();
+      }
+    }
+  }
+
+  function proximoPassoSolicitacao() {
+    if (etapaAtualGlobal === 1) {
+      const numProc = document.getElementById('inputProcesso')?.value;
+      const dataEnv = document.getElementById('inputDataEnvio')?.value;
+      const tipo = document.getElementById('selectTipoEntrada')?.value;
+
+      if (!numProc || !dataEnv || !tipo) {
+        alert("Por favor, preencha todos os campos obrigatórios do processo.");
+        return;
+      }
+
+      const btnProximo = document.getElementById('btnProximo');
+      if (btnProximo) btnProximo.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(resp) {
+          if (btnProximo) btnProximo.disabled = false;
+          if (resp && resp.success) {
+            processoCadastradoAtual = resp.numProcesso;
+            exibirPerguntaAssociaSolicitacao(resp.numProcesso);
+            if (typeof carregarDashboardTiposEntrada === 'function') carregarDashboardTiposEntrada();
+          } else {
+            alert("Erro ao salvar processo: " + (resp.error || "Erro desconhecido"));
+          }
+        })
+        .withFailureHandler(function(err) {
+          if (btnProximo) btnProximo.disabled = false;
+          alert("Erro na conexão ao cadastrar processo: " + err);
+        })
+        .salvarCadastroProcesso({
+          numProcesso: numProc,
+          dataEnvio: dataEnv,
+          tipoEntrada: tipo
+        });
+
+    } else if (etapaAtualGlobal === 2 && stepSolicitacao === 2) {
+      if (!arquivoSolicitacao) {
+        alert("Selecione o PDF da Solicitação antes de avançar.");
+        return;
+      }
+      processarSolicitacaoComGemini();
+    }
+  }
+
+  function handleFileSelectSolicitacao(input) {
+    const file = input.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        arquivoSolicitacao = { fileName: file.name, mimeType: file.type || "application/pdf", base64: e.target.result };
+        if (document.getElementById('fileName')) document.getElementById('fileName').innerText = file.name;
+        if (document.getElementById('fileInfo')) document.getElementById('fileInfo').classList.remove('d-none');
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  function resetFileSolicitacao() {
+    arquivoSolicitacao = null;
+    if (document.getElementById('fileInfo')) document.getElementById('fileInfo').classList.add('d-none');
+    const input = document.getElementById('inputArquivoSolicitacao');
+    if (input) input.value = '';
+  }
+
+  function processarSolicitacaoComGemini() {
+    const loading = document.getElementById('aiLoading');
+    if (loading) loading.classList.remove('d-none');
+
+    const numProc = document.getElementById('inputProcesso')?.value || processoCadastradoAtual || '';
+    const tipo = document.getElementById('selectTipoEntrada')?.value || '';
+
+    google.script.run
+      .withSuccessHandler(onSolicitacaoGeminiSuccess)
+      .withFailureHandler(err => {
+        if (loading) loading.classList.add('d-none');
+        alert("Erro na comunicação com o servidor: " + err);
+      })
+      .processarSolicitacaoTombamento(arquivoSolicitacao, tipo, numProc, "");
+  }
+
+  function onSolicitacaoGeminiSuccess(resp) {
+    const loading = document.getElementById('aiLoading');
+    if (loading) loading.classList.add('d-none');
+
+    if (resp && resp.success === false) {
+      alert("A IA não conseguiu ler o documento enviado: " + (resp.error || ''));
+      return;
+    }
+
+    const data = (resp && resp.extractedData) ? resp.extractedData : resp;
+    renderizarFormularioSolicitacao(data, false);
+  }
+
+  function renderizarFormularioSolicitacao(data, modoManual) {
+    const container = document.getElementById('dynamicFieldsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const rotulos = {
+      titulo_edital: "Título do Edital",
+      numero_edital: "Número do Edital",
+      empenho: "Número do Empenho",
+      ug_empenho: "UG Empenho",
+      nome_responsavel: "Nome do Responsável",
+      siape_responsavel: "SIAPE do Responsável",
+      cpf_responsavel: "CPF do Responsável",
+      telefone_responsavel: "Telefone do Responsável",
+      email_responsavel: "E-mail do Responsável",
+      unidade_responsavel: "Unidade do Responsável",
+      localizacao_bens: "Localização dos Bens",
+      contato_etiquetagem: "Contato para Etiquetagem",
+      item_solicitado: "Item Solicitado",
+      descricao_bens: "Descrição dos Bens",
+      marca: "Marca",
+      modelo: "Modelo",
+      periodo_garantia: "Período de Garantia"
+    };
+
+    let htmlFinal = "";
+
+    Object.keys(rotulos).forEach(chave => {
+      const valor = data[chave] || '';
+      htmlFinal += `
+        <div class="col-md-6 mb-2">
+          <label class="form-label small fw-bold text-secondary mb-1">${rotulos[chave]}</label>
+          <input type="text" class="form-control form-control-sm dynamic-field-solic" data-key="${chave}" value="${valor}">
+        </div>`;
+    });
+
+    container.innerHTML = htmlFinal;
+    stepSolicitacao = 3;
+    atualizarUISolicitacao();
+  }
+
+  function finalizarSolicitacao() {
+    const campos = {};
+    document.querySelectorAll('.dynamic-field-solic').forEach(inp => {
+      const key = inp.getAttribute('data-key');
+      if (key) campos[key] = inp.value;
+    });
+
+    const numProc = document.getElementById('inputProcesso')?.value || processoCadastradoAtual || '';
+    const tipoEnt = document.getElementById('selectTipoEntrada')?.value || '';
+
+    const payload = {
+      numProcesso: numProc,
+      tipoEntrada: tipoEnt,
+      dadosExtraidos: campos,
+      fileData: arquivoSolicitacao
+    };
+
+    const btnProximo = document.getElementById('btnProximo');
+    if (btnProximo) btnProximo.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(resp => {
+        if (btnProximo) btnProximo.disabled = false;
+        if (resp && resp.success) {
+          if (typeof carregarDashboardTiposEntrada === 'function') carregarDashboardTiposEntrada();
+          exibirOpcoesPosSalvamento(numProc);
+        } else {
+          alert("Erro ao gravar solicitação: " + (resp.error || "Desconhecido"));
+        }
+      })
+      .withFailureHandler(err => {
+        if (btnProximo) btnProximo.disabled = false;
+        alert("Erro na requisição: " + err);
+      })
+      .salvarSolicitacaoConfirmada(payload);
+  }
+
+  function exibirOpcoesPosSalvamento(numProc) {
+  const footer = document.getElementById('modalFooterNav');
+  if (footer) footer.classList.add('d-none');
+
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById('step' + i + 'Content');
+    if (el) el.classList.add('d-none');
+  }
+
+  document.getElementById('stepTitle').innerText = "Solicitação Gravada com Sucesso!";
+
+  let containerSucesso = document.getElementById('posSalvamentoContainer');
+  if (!containerSucesso) {
+    containerSucesso = document.createElement('div');
+    containerSucesso.id = 'posSalvamentoContainer';
+    containerSucesso.className = 'text-center py-4';
+    const modalBody = document.querySelector('#modalNovaEntrada .modal-body');
+    if (modalBody) modalBody.appendChild(containerSucesso);
+  } else {
+    containerSucesso.classList.remove('d-none');
+  }
+
+  containerSucesso.innerHTML = `
+    <div class="mb-3 text-success">
+      <i class="fa-solid fa-circle-check fa-4x mb-3"></i>
+      <h5 class="fw-bold text-dark">Solicitação de Tombamento registrada!</h5>
+      <p class="text-muted small">Processo: <strong>${numProc}</strong></p>
+    </div>
+
+    <div class="alert alert-light border p-3 mb-4">
+      <p class="fw-bold text-secondary mb-2">O que deseja fazer agora?</p>
+      <div class="d-grid gap-2 col-md-10 mx-auto">
+        <!-- NOVO BOTÃO: Inserir outra solicitação no mesmo processo -->
+        <button class="btn btn-outline-primary fw-bold py-2" onclick="inserirOutraSolicitacao('${numProc}')">
+          <i class="fa-solid fa-file-circle-plus me-2"></i> Inserir outra Solicitação neste Processo
+        </button>
+
+        <button class="btn btn-warning text-dark fw-bold py-2" onclick="prosseguirParaNF('${numProc}')">
+          <i class="fa-solid fa-file-invoice-dollar me-2"></i> Ir para Etapa 3: Anexar Nota Fiscal
+        </button>
+
+        <button class="btn btn-outline-secondary btn-sm mt-2" onclick="fecharModalAcao()">
+          <i class="fa-solid fa-check me-1"></i> Concluir e Fechar
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+  function prosseguirParaNF(numProc) {
+    restaurarInterfaceModal();
+    abrirModalAnexarNF(numProc);
+  }
+
+  function fecharModalAcao() {
+    if (modalInstance) modalInstance.hide();
+    if (typeof carregarDashboardTiposEntrada === 'function') carregarDashboardTiposEntrada();
+  }
+
+  function restaurarInterfaceModal() {
+    const footer = document.getElementById('modalFooterNav');
+    if (footer) footer.classList.remove('d-none');
+    const containerSucesso = document.getElementById('posSalvamentoContainer');
+    if (containerSucesso) containerSucesso.classList.add('d-none');
+  }
+
+  function exibirPerguntaAssociaSolicitacao(numProc) {
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById('step' + i + 'Content');
+      if (el) el.classList.add('d-none');
+    }
+    
+    const footerNav = document.getElementById('modalFooterNav');
+    if (footerNav) footerNav.classList.add('d-none');
+
+    document.getElementById('stepTitle').innerText = "Processo Cadastrado";
+    document.getElementById('lblProcessoCadastrado').innerText = numProc;
+
+    const stepDecisao = document.getElementById('stepDecisaoSolicitacao');
+    if (stepDecisao) stepDecisao.classList.remove('d-none');
+  }
+
+  function iniciarEtapaSolicitacao() {
+    etapaAtualGlobal = 2;
+    stepSolicitacao = 2;
+    atualizarUISolicitacao();
+  }
+
+  function iniciarEtapaNotaFiscalDireta() {
+    etapaAtualGlobal = 3;
+    abrirModalAnexarNF(processoCadastradoAtual);
+  }
+
+  /**
+ * Oculta o painel de sucesso e reinicia a Etapa 2 mantendo o vínculo do processo
+ */
+function inserirOutraSolicitacao(numProc) {
+  // 1. Esconde o container de opções pós-salvamento
+  const containerSucesso = document.getElementById('posSalvamentoContainer');
+  if (containerSucesso) containerSucesso.classList.add('d-none');
+
+  // 2. Reseta o arquivo/formulário da solicitação anterior
+  if (typeof resetFileSolicitacao === 'function') {
+    resetFileSolicitacao();
+  }
+
+  // 3. Atualiza o título do modal
+  const stepTitle = document.getElementById('stepTitle');
+  if (stepTitle) stepTitle.innerText = "Upload da Solicitação de Tombamento";
+
+  // 4. Garante que o input do processo está preenchido
+  const inputProc = document.getElementById('inputProcesso');
+  if (inputProc) inputProc.value = numProc;
+
+  // 5. Exibe novamente o formulário de upload da Etapa 2
+  const step2 = document.getElementById('step2Content');
+  if (step2) step2.classList.remove('d-none');
+}
+
+// Variável global para controlar se o processo foi validado no modo direto
+let processoValidoConfirmado = false;
+let modoAnexoDireto = false;
+
+/**
+ * Abre o modal direto na Etapa 2 ativando a flag de Anexo Direto
+ */
+function abrirModalSolicitacaoDireta(numProcOpcional = '') {
+  modoAnexoDireto = true;
+  processoValidoConfirmado = false;
+
+  const modalEl = document.getElementById('modalNovaEntrada');
+  if (!modalEl) return alert("Modal #modalNovaEntrada não encontrado.");
+
+  // Oculta containers de passos e decisões anteriores
+  const containerSucesso = document.getElementById('posSalvamentoContainer');
+  if (containerSucesso) containerSucesso.classList.add('d-none');
+
+  const stepDecisao = document.getElementById('stepDecisaoSolicitacao');
+  if (stepDecisao) stepDecisao.classList.add('d-none');
+
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById('step' + i + 'Content');
+    if (el) el.classList.add('d-none');
+  }
+
+  // Exibe a Etapa 2
+  const step2 = document.getElementById('step2Content');
+  if (step2) step2.classList.remove('d-none');
+
+  // Limpa feedback anterior
+  const feedback = document.getElementById('feedbackProcesso');
+  if (feedback) {
+    feedback.className = 'mt-2 small d-none';
+    feedback.innerHTML = '';
+  }
+
+  const inputProc = document.getElementById('inputProcesso');
+  if (inputProc) {
+    inputProc.value = numProcOpcional || '';
+    if (numProcOpcional) {
+      verificarProcessoExistente(numProcOpcional);
+    }
+  }
+
+  // Ajusta títulos
+  const badge = document.getElementById('modalStageBadge');
+  if (badge) badge.innerText = "Etapa 2";
+
+  const title = document.getElementById('stepTitle');
+  if (title) title.innerText = "Anexar Solicitação de Tombamento";
+
+  const footer = document.getElementById('modalFooterNav');
+  if (footer) footer.classList.remove('d-none');
+
+  if (typeof resetFileSolicitacao === 'function') resetFileSolicitacao();
+
+  const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modalInstance.show();
+
+  if (inputProc && !numProcOpcional) {
+    setTimeout(() => inputProc.focus(), 400);
+  }
+}
+
+/**
+ * Valida a existência do processo (busca na memória local e na planilha via Apps Script)
+ */
+function verificarProcessoExistente(numProc) {
+  const feedback = document.getElementById('feedbackProcesso');
+  if (!feedback) return;
+
+  const procDigitado = numProc ? numProc.trim() : '';
+
+  if (!procDigitado) {
+    feedback.className = 'mt-2 small alert alert-warning py-1 px-2 mb-0';
+    feedback.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i> Por favor, informe o número do processo.';
+    processoValidoConfirmado = false;
+    return;
+  }
+
+  // Normalizador: ignora pontos, barras e traços
+  const normalizar = (txt) => String(txt || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const procLimpo = normalizar(procDigitado);
+
+  // 1. Busca rápida em variáveis locais na memória do navegador
+  let achouMemoria = false;
+  for (let key in window) {
+    try {
+      if (Array.isArray(window[key])) {
+        const item = window[key].find(el => normalizar(JSON.stringify(el)).includes(procLimpo));
+        if (item) {
+          achouMemoria = true;
+          break;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (achouMemoria) {
+    processoValidoConfirmado = true;
+    feedback.className = 'mt-2 small alert alert-success py-1 px-2 mb-0';
+    feedback.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i> <strong>Processo Localizado!</strong>`;
+    removerObrigatoriedadeEtapa1();
+    return;
+  }
+
+  // 2. Consulta direta na planilha via Google Apps Script
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    feedback.className = 'mt-2 small alert alert-info py-1 px-2 mb-0';
+    feedback.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Consultando processo na planilha...';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.existe) {
+          processoValidoConfirmado = true;
+          feedback.className = 'mt-2 small alert alert-success py-1 px-2 mb-0';
+          feedback.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i> <strong>Processo Localizado na Planilha!</strong>`;
+          removerObrigatoriedadeEtapa1();
+        } else {
+          processoValidoConfirmado = false;
+          feedback.className = 'mt-2 small alert alert-danger py-1 px-2 mb-0';
+          feedback.innerHTML = `<i class="fa-solid fa-circle-xmark me-1"></i> <strong>Processo não localizado!</strong> Cadastre o processo na <strong>Etapa 1</strong> antes de anexar documentos.`;
+        }
+      })
+      .withFailureHandler(function(err) {
+        feedback.className = 'mt-2 small alert alert-warning py-1 px-2 mb-0';
+        feedback.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i> Erro ao conectar com o servidor. Verifique se salvou o arquivo Code.gs.`;
+      })
+      .verificarProcessoExistenteGS(procDigitado);
+
+    return;
+  }
+
+  processoValidoConfirmado = false;
+  feedback.className = 'mt-2 small alert alert-danger py-1 px-2 mb-0';
+  feedback.innerHTML = `<i class="fa-solid fa-circle-xmark me-1"></i> <strong>Processo não localizado!</strong> Cadastre o processo na <strong>Etapa 1</strong>.`;
+}
+
+/**
+ * Desativa a exigência dos campos da Etapa 1 durante o anexo direto
+ */
+function removerObrigatoriedadeEtapa1() {
+  const inputDataEnvio = document.getElementById('inputDataEnvio');
+  const selectTipoEntrada = document.getElementById('selectTipoEntrada');
+
+  if (inputDataEnvio) {
+    inputDataEnvio.removeAttribute('required');
+    if (!inputDataEnvio.value) {
+      inputDataEnvio.value = new Date().toISOString().split('T')[0];
+    }
+  }
+
+  if (selectTipoEntrada) {
+    selectTipoEntrada.removeAttribute('required');
+  }
+}
+
+/**
+ * Validação executada antes de selecionar/processar o arquivo da solicitação
+ */
+function handleFileSelectSolicitacao(input) {
+  const inputProc = document.getElementById('inputProcesso');
+  const numProc = inputProc ? inputProc.value.trim() : '';
+
+  // Se estiver no modo direto do cabeçalho, exige a validação prévia do processo
+  if (modoAnexoDireto) {
+    const ehValido = verificarProcessoExistente(numProc);
+    if (!ehValido) {
+      alert("Não é possível prosseguir: O número do processo informado não está cadastrado no sistema.");
+      input.value = ""; // Limpa a seleção do arquivo
+      if (inputProc) inputProc.focus();
+      return;
+    }
+  }
+
+  // Se passou na validação ou não está no modo direto, prossegue com o envio do PDF
+  if (typeof processarArquivoSolicitacao === 'function') {
+    processarArquivoSolicitacao(input.files[0]);
+  }
+}
+
+</script>

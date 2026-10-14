@@ -1,0 +1,100 @@
+<style>
+  /* Define o ponteiro de clique e o efeito ao passar o mouse nos subcards */
+  .cursor-pointer, .status-box {
+    cursor: pointer !important;
+    transition: transform 0.15s ease-in-out, background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  }
+
+  .status-box:hover {
+    background-color: #e2e8f0 !important; /* Escurece suavemente o fundo */
+    transform: translateY(-2px);           /* Eleva ligeiramente o subcard */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* Aplica uma sombra leve */
+  }
+</style>
+
+<!-- Cabeçalho Principal -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+  <div>
+    <h2 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-boxes-packing text-primary me-2"></i>Controle de Entrada de Bens</h2>
+    <p class="text-muted small mb-0">Gestão e acompanhamento do fluxo de tombamento e notas fiscais por tipo de entrada</p>
+  </div>
+  
+  <!-- Ações do Cabeçalho -->
+  <div class="d-flex gap-2 flex-wrap align-items-center">
+    <!-- Botão 1: Cadastrar Processo -->
+    <button class="btn btn-primary fw-bold" onclick="abrirModalNovaEntrada()">
+      <i class="fa-solid fa-folder-plus me-1"></i> Cadastrar Processo
+    </button>
+
+    <!-- Botão 2: Anexar Solicitação de Tombamento -->
+    <button class="btn btn-info text-white fw-bold" onclick="abrirModalSolicitacaoDireta()">
+      <i class="fa-solid fa-file-circle-plus me-1"></i> Anexar Solicitação
+    </button>
+
+    <!-- Botão 3: Anexar Nota Fiscal -->
+    <button class="btn btn-warning text-dark fw-bold" onclick="abrirModalAnexarNF()">
+      <i class="fa-solid fa-file-invoice-dollar me-1"></i> Anexar Nota Fiscal
+    </button>
+
+    <!-- Atualizar Dados -->
+    <button class="btn btn-outline-secondary fw-bold" onclick="carregarDashboardTiposEntrada()" title="Atualizar Painel">
+      <i class="fa-solid fa-rotate me-1"></i> Atualizar
+    </button>
+  </div>
+</div>
+
+<!-- Grid de Tipos de Entrada -->
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0 text-dark">
+      <i class="fa-solid fa-layer-group me-2 text-primary"></i>Situação por Tipo de Entrada
+    </h5>
+    <span class="badge bg-light text-secondary border fs-7">
+      <i class="fa-solid fa-circle-info me-1"></i> Indicadores em tempo real
+    </span>
+  </div>
+
+  <!-- Grid de Cards por Tipo de Entrada -->
+  <div class="row g-3" id="gridTiposEntrada">
+    <!-- Os cards serão renderizados dinamicamente via JS -->
+  </div>
+</div>
+
+<!-- Modal de Detalhamento do Processo -->
+<div class="modal fade" id="modalDetalhamentoProcessos" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title fw-bold" id="modalDetalhamentoTitulo">
+          <i class="fa-solid fa-list-check me-2"></i> Detalhamento dos Processos
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle border">
+            <thead class="table-light">
+              <tr>
+                <th>Número do Processo</th>
+                <th>Data de Envio</th>
+                <th>Tipo de Entrada</th>
+                <th class="text-center">Solicitações de Tombamento</th>
+                <th class="text-center">Notas Fiscais</th>
+                <th class="text-center">Situação</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyDetalhamentoProcessos">
+              <!-- Linhas carregadas dinamicamente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer bg-light">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+

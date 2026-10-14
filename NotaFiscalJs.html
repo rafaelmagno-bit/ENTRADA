@@ -1,0 +1,713 @@
+<script>
+  let stepNF = 4;
+  let opcaoEntradaNF = 'upload'; // 'upload', 'chave' ou 'manual'
+  let arquivoNFBase64 = null;
+  let nomeArquivoNF = "";
+  let mimeTypeNF = "application/pdf";
+  let duplicidadeNFDetectada = false;
+  let processoValidoNF = false; // Bloqueio se o processo não possuir solicitação de tombamento
+  let chaveDanfeDigitada = "";
+
+  /**
+   * Abre o Modal na Etapa 3 (Anexar Nota Fiscal)
+   */
+  function abrirModalAnexarNF(numProcOpcional) {
+    stepNF = 4;
+    opcaoEntradaNF = 'upload';
+    duplicidadeNFDetectada = false;
+    processoValidoNF = false;
+    chaveDanfeDigitada = "";
+    removerArquivoNF();
+    restaurarInterfaceModalNF();
+
+    const modalElement = document.getElementById('modalNovaEntrada');
+    if (!modalElement) return alert("Modal de entrada não encontrado.");
+
+    const bs = window.bootstrap || bootstrap;
+    modalInstance = bs.Modal.getOrCreateInstance(modalElement);
+
+    let procValor = (typeof numProcOpcional !== 'undefined' && numProcOpcional) ? numProcOpcional : "";
+
+    garantirBlocoProcessoNF(procValor);
+    selecionarOpcaoEntradaNF('upload');
+    atualizarUINotaFiscal();
+    modalInstance.show();
+  }
+
+  /**
+   * Alterna a opção de entrada da Nota Fiscal (Upload, Chave DANFE ou Manual)
+   */
+  function selecionarOpcaoEntradaNF(opcao) {
+    opcaoEntradaNF = opcao;
+
+    // Atualiza destaque visual dos Cards
+    ['upload', 'chave', 'manual'].forEach(op => {
+      const card = document.getElementById('cardOpcao' + op.charAt(0).toUpperCase() + op.slice(1));
+      const painel = document.getElementById('painelOpcao' + op.charAt(0).toUpperCase() + op.slice(1));
+      
+      if (card) {
+        if (op === opcao) {
+          card.classList.add('border-primary', 'shadow', 'bg-light');
+          card.classList.remove('border-light');
+        } else {
+          card.classList.remove('border-primary', 'shadow', 'bg-light');
+        }
+      }
+
+      if (painel) {
+        if (op === opcao) painel.classList.remove('d-none');
+        else painel.classList.add('d-none');
+      }
+    });
+
+    atualizarBotaoNavegacaoNF();
+  }
+
+  /**
+   * Renderiza a busca de processo e validação no topo do modal da NF
+   */
+  function garantirBlocoProcessoNF(procValor) {
+    const container = document.getElementById('containerBuscaProcessoNF');
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="card bg-light border p-3">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-8">
+            <label class="form-label small fw-bold text-dark mb-1">
+              <i class="fa-solid fa-folder-open text-primary me-1"></i> Número do Processo <span class="text-danger">*</span>
+            </label>
+            <input type="text" id="inputProcessoNF" class="form-control form-control-sm" placeholder="Ex: 23076.045851/2026-83" value="${procValor || ''}" onchange="aoMudarProcessoNF(this.value)">
+          </div>
+          <div class="col-md-4">
+            <button type="button" class="btn btn-outline-primary btn-sm w-100 fw-bold" onclick="aoMudarProcessoNF(document.getElementById('inputProcessoNF').value)">
+              <i class="fa-solid fa-magnifying-glass me-1"></i> Buscar Processo
+            </button>
+          </div>
+          <div class="col-12 mt-2">
+            <div id="msgValidaProcessoNF" class="d-none"></div>
+            <label class="form-label extra-small text-muted mb-1">Solicitação de Tombamento Vinculada</label>
+            <select id="selectSolicitacaoVinculada" class="form-select form-select-sm">
+              <option value="">Informe ou busque um processo válido...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (procValor) {
+      carregarSolicitacoesParaNF(procValor);
+    } else {
+      processoValidoNF = false;
+    }
+  }
+
+  function aoMudarProcessoNF(val) {
+    const numProc = (val || '').trim();
+    if (!numProc) {
+      alert("Por favor, informe o número do processo.");
+      processoValidoNF = false;
+      exibirAvisoProcessoInvalido("Informe um número de processo válido.");
+      return;
+    }
+    carregarSolicitacoesParaNF(numProc);
+  }
+
+  function carregarSolicitacoesParaNF(numProc) {
+    if (!numProc) return;
+
+    const select = document.getElementById('selectSolicitacaoVinculada');
+    if (select) select.innerHTML = '<option value="">Buscando solicitações do processo...</option>';
+
+    google.script.run
+      .withSuccessHandler(lista => {
+        if (!select) return;
+
+        if (lista && lista.length > 0) {
+          processoValidoNF = true;
+          exibirSucessoProcessoValido(numProc, lista.length);
+
+          select.innerHTML = '<option value="Geral">Vincular ao Processo Geral (Todas as solicitações)</option>';
+          lista.forEach(sol => {
+            select.innerHTML += `<option value="${sol.idSolicitacao}">${sol.idSolicitacao} - ${sol.tipoEntrada || 'Solicitação'} (${sol.dataHora || ''})</option>`;
+          });
+        } else {
+          processoValidoNF = false;
+          exibirAvisoProcessoInvalido(`O processo <strong>${numProc}</strong> não possui nenhuma <strong>Solicitação de Tombamento</strong> cadastrada no sistema.`);
+          select.innerHTML = '<option value="">Nenhuma solicitação encontrada para este processo</option>';
+        }
+      })
+      .withFailureHandler(err => {
+        processoValidoNF = false;
+        exibirAvisoProcessoInvalido("Erro ao consultar o processo no sistema: " + err);
+      })
+      .obterSolicitacoesDoProcesso(numProc);
+  }
+
+  function exibirSucessoProcessoValido(numProc, quantidade) {
+    const msgDiv = document.getElementById('msgValidaProcessoNF');
+    if (msgDiv) {
+      msgDiv.className = 'alert alert-success py-1 px-2 extra-small mb-2';
+      msgDiv.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i> Processo localizado! <strong>${quantidade}</strong> solicitação(ões) de tombamento encontrada(s).`;
+      msgDiv.classList.remove('d-none');
+    }
+  }
+
+  function exibirAvisoProcessoInvalido(mensagemHtml) {
+    const msgDiv = document.getElementById('msgValidaProcessoNF');
+    if (msgDiv) {
+      msgDiv.className = 'alert alert-danger py-2 px-3 extra-small mb-2 border-danger';
+      msgDiv.innerHTML = `<i class="fa-solid fa-triangle-exclamation me-1"></i> <strong>Atenção:</strong> ${mensagemHtml} <br><span class="text-muted">É necessário cadastrar a solicitação de tombamento para este processo antes de anexar uma Nota Fiscal.</span>`;
+      msgDiv.classList.remove('d-none');
+    }
+  }
+
+  function atualizarUINotaFiscal() {
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById('step' + i + 'Content');
+      if (el) el.classList.add('d-none');
+    }
+
+    const badge = document.getElementById('modalStageBadge');
+    if (badge) {
+      badge.className = "badge bg-warning text-dark me-2";
+      badge.innerText = "Etapa 3";
+    }
+
+    const active = document.getElementById('step' + stepNF + 'Content');
+    if (active) active.classList.remove('d-none');
+
+    document.getElementById('stepTitle').innerText = stepNF === 4 ? "Cadastro da Nota Fiscal" : "Validação dos Dados da Nota Fiscal";
+
+    const btnAnterior = document.getElementById('btnAnterior');
+    if (btnAnterior) btnAnterior.disabled = (stepNF === 4);
+
+    atualizarBotaoNavegacaoNF();
+  }
+
+  function atualizarBotaoNavegacaoNF() {
+    const btnProximo = document.getElementById('btnProximo');
+    if (!btnProximo) return;
+
+    if (stepNF === 5) {
+      btnProximo.innerHTML = '<i class="fa-solid fa-check me-1"></i> Salvar Nota Fiscal';
+      btnProximo.className = 'btn btn-success fw-bold';
+      btnProximo.onclick = finalizarNotaFiscal;
+    } else {
+      if (opcaoEntradaNF === 'upload') {
+        btnProximo.innerHTML = 'Processar Nota Fiscal <i class="fa-solid fa-arrow-right ms-1"></i>';
+        btnProximo.className = 'btn btn-primary fw-bold';
+      } else if (opcaoEntradaNF === 'chave') {
+        btnProximo.innerHTML = 'Consultar DANFE <i class="fa-solid fa-magnifying-glass ms-1"></i>';
+        btnProximo.className = 'btn btn-warning text-dark fw-bold';
+      } else {
+        btnProximo.innerHTML = 'Ir para Preenchimento Manual <i class="fa-solid fa-pen-to-square ms-1"></i>';
+        btnProximo.className = 'btn btn-success fw-bold';
+      }
+      btnProximo.onclick = proximoPassoNF;
+    }
+  }
+
+  function proximoPassoNF() {
+    if (stepNF === 4) {
+      const inputProc = document.getElementById('inputProcessoNF') || document.getElementById('inputProcesso');
+      const numProc = inputProc ? inputProc.value.trim() : '';
+
+      if (!numProc) {
+        alert("Informe o número do processo antes de prosseguir.");
+        if (inputProc) inputProc.focus();
+        return;
+      }
+
+      if (!processoValidoNF) {
+        alert("NÃO É PERMITIDO AVANÇAR!\n\nO processo informado (" + numProc + ") não possui NENHUMA solicitação de tombamento cadastrada.");
+        if (inputProc) inputProc.focus();
+        return;
+      }
+
+      if (opcaoEntradaNF === 'upload') {
+        if (!arquivoNFBase64) {
+          alert("Selecione o arquivo da Nota Fiscal.");
+          return;
+        }
+        processarNFComGemini(numProc);
+      } else if (opcaoEntradaNF === 'chave') {
+        consultarChaveDanfe();
+      } else if (opcaoEntradaNF === 'manual') {
+        preencherNFManualmente();
+      }
+    }
+  }
+
+  function passoAnteriorNF() {
+    if (stepNF === 5) {
+      stepNF = 4;
+      atualizarUINotaFiscal();
+    }
+  }
+
+  function selecionarArquivoNF(input) {
+    if (!input.files || !input.files[0]) return;
+    
+    const file = input.files[0];
+    nomeArquivoNF = file.name;
+    mimeTypeNF = file.type || "application/pdf";
+
+    if (document.getElementById('nfFileName')) document.getElementById('nfFileName').innerText = file.name;
+    if (document.getElementById('nfFileSize')) document.getElementById('nfFileSize').innerText = (file.size / 1024).toFixed(1) + " KB";
+    
+    if (document.getElementById('dropAreaNF')) document.getElementById('dropAreaNF').classList.add('d-none');
+    if (document.getElementById('nfFilePreview')) document.getElementById('nfFilePreview').classList.remove('d-none');
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      arquivoNFBase64 = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removerArquivoNF() {
+    arquivoNFBase64 = null;
+    nomeArquivoNF = "";
+    duplicidadeNFDetectada = false;
+    const inputNF = document.getElementById('inputNotaFiscal');
+    if (inputNF) inputNF.value = "";
+    if (document.getElementById('dropAreaNF')) document.getElementById('dropAreaNF').classList.remove('d-none');
+    if (document.getElementById('nfFilePreview')) document.getElementById('nfFilePreview').classList.add('d-none');
+  }
+
+  function formatarInputChaveDanfe(input) {
+    let val = input.value.replace(/\D/g, '').substring(0, 44);
+    chaveDanfeDigitada = val;
+    // Formata em blocos de 4 dígitos para facilitar a leitura
+    input.value = val.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  }
+
+  /**
+   * Consulta os dados da Nota Fiscal pela Chave DANFE (44 dígitos)
+   */
+  function consultarChaveDanfe() {
+    const rawKey = chaveDanfeDigitada || (document.getElementById('inputChaveDanfe')?.value || '').replace(/\D/g, '');
+
+    if (!rawKey || rawKey.length !== 44) {
+      alert("Por favor, informe uma chave de acesso da NF-e válida com 44 dígitos.");
+      document.getElementById('inputChaveDanfe')?.focus();
+      return;
+    }
+
+    const loading = document.getElementById('danfeLoading');
+    if (loading) loading.classList.remove('d-none');
+
+    google.script.run
+      .withSuccessHandler(resp => {
+        if (loading) loading.classList.add('d-none');
+        if (resp && resp.success) {
+          renderizarPasso5NF(resp.extractedData, false);
+          stepNF = 5;
+          atualizarUINotaFiscal();
+          checarDuplicidadeNF(resp.extractedData.numero_nota, resp.extractedData.cnpj_fornecedor, resp.extractedData.nome_fornecedor);
+        } else {
+          alert("Não foi possível carregar os dados desta chave DANFE: " + (resp.error || "Chave não encontrada"));
+        }
+      })
+      .withFailureHandler(err => {
+        if (loading) loading.classList.add('d-none');
+        alert("Erro ao consultar chave DANFE no servidor: " + err);
+      })
+      .consultarDanfeChave(rawKey);
+  }
+
+  function processarNFComGemini(proc) {
+    const loading = document.getElementById('aiNFLoading');
+    if (loading) loading.classList.remove('d-none');
+
+    google.script.run
+      .withSuccessHandler(onNFSuccess)
+      .withFailureHandler(err => {
+        if (loading) loading.classList.add('d-none');
+        exibirOpcoesErroLeituraNF("Erro na comunicação com o servidor: " + err);
+      })
+      .processarNotaFiscal(arquivoNFBase64, nomeArquivoNF, proc);
+  }
+
+  function onNFSuccess(resp) {
+    const loading = document.getElementById('aiNFLoading');
+    if (loading) loading.classList.add('d-none');
+
+    if (resp && resp.success === false) {
+      exibirOpcoesErroLeituraNF(resp.error || "A IA não conseguiu ler a Nota Fiscal.");
+      return;
+    }
+
+    const data = (resp && resp.extractedData) ? resp.extractedData : resp;
+    renderizarPasso5NF(data, false);
+    stepNF = 5;
+    atualizarUINotaFiscal();
+
+    checarDuplicidadeNF(data.numero_nota, data.cnpj_fornecedor, data.nome_fornecedor);
+  }
+
+  function preencherNFManualmente() {
+    const dadosVaziosNF = {
+      numero_nota: "",
+      nome_fornecedor: "",
+      cnpj_fornecedor: "",
+      natureza_operacao: "",
+      data_emissao: "",
+      valor_frete: "0,00",
+      valor_desconto: "0,00",
+      valor_ipi: "0,00",
+      valor_total_nota: "",
+      chave_acesso: chaveDanfeDigitada || "",
+      itens: [
+        { descricao: "", quantidade: "1", valor_unitario: "", valor_total: "", valor_ipi_item: "0,00" }
+      ]
+    };
+
+    renderizarPasso5NF(dadosVaziosNF, true);
+    stepNF = 5;
+    atualizarUINotaFiscal();
+  }
+
+  function checarDuplicidadeNF(numNota, cnpj, fornecedor) {
+    duplicidadeNFDetectada = false;
+    ocultarAlertaDuplicidadeNF();
+
+    const numClean = (numNota || '').trim();
+    const cnpjClean = (cnpj || '').trim();
+    const fornecedorClean = (fornecedor || '').trim();
+
+    if (!numClean) return;
+
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res && res.existe) {
+          duplicidadeNFDetectada = true;
+          exibirAlertaDuplicidadeNF(numClean, cnpjClean || fornecedorClean, res.numProcesso, res.mensagem);
+        }
+      })
+      .verificarDuplicidadeNotaFiscal(numClean, cnpjClean, fornecedorClean);
+  }
+
+  function revalidarDuplicidadeCampos() {
+    const numNota = document.querySelector('.dynamic-field-nf[data-key="numero_nota"]')?.value || '';
+    const cnpj = document.querySelector('.dynamic-field-nf[data-key="cnpj_fornecedor"]')?.value || '';
+    const fornecedor = document.querySelector('.dynamic-field-nf[data-key="nome_fornecedor"]')?.value || '';
+    checarDuplicidadeNF(numNota, cnpj, fornecedor);
+  }
+
+  function exibirAlertaDuplicidadeNF(numNota, fornecedor, numProcessoExistente, msgPersonalizada) {
+    let alerta = document.getElementById('alertaDuplicidadeNF');
+    const container = document.getElementById('dynamicNFFieldsContainer');
+
+    if (!alerta && container) {
+      alerta = document.createElement('div');
+      alerta.id = 'alertaDuplicidadeNF';
+      container.insertBefore(alerta, container.firstChild);
+    }
+
+    if (alerta) {
+      alerta.className = 'alert alert-danger border-danger p-3 mb-3 text-start shadow-sm col-12';
+      alerta.innerHTML = `
+        <div class="d-flex align-items-start gap-3">
+          <i class="fa-solid fa-triangle-exclamation fa-2x text-danger mt-1"></i>
+          <div class="w-100">
+            <h6 class="fw-bold text-danger mb-1"><i class="fa-solid fa-copy me-1"></i> Possível Nota Fiscal Duplicada Detectada</h6>
+            <p class="small text-dark mb-2">
+              A Nota Fiscal nº <strong>${numNota}</strong> para o fornecedor <strong>${fornecedor}</strong> já consta registrada no sistema.
+            </p>
+            <div class="p-2 bg-white border border-danger-subtle rounded d-inline-block">
+              <span class="small fw-bold text-secondary">Cadastrada no Processo nº:</span>
+              <span class="badge bg-danger text-white fs-6 ms-1"><i class="fa-solid fa-folder-open me-1"></i> ${numProcessoExistente}</span>
+            </div>
+          </div>
+        </div>
+      `;
+      alerta.classList.remove('d-none');
+    }
+  }
+
+  function ocultarAlertaDuplicidadeNF() {
+    const alerta = document.getElementById('alertaDuplicidadeNF');
+    if (alerta) alerta.classList.add('d-none');
+  }
+
+  /**
+   * Renderiza os campos de conferência no Passo 5 da Nota Fiscal
+   */
+  function renderizarPasso5NF(data, modoManual) {
+    data = data || {};
+    const container = document.getElementById('dynamicNFFieldsContainer');
+    if (!container) return;
+    
+    container.innerHTML = '';
+
+    const rotulosNF = {
+      numero_nota: "Número da Nota",
+      nome_fornecedor: "Nome do Fornecedor",
+      cnpj_fornecedor: "CNPJ do Fornecedor",
+      natureza_operacao: "Natureza da Operação",
+      data_emissao: "Data de Emissão",
+      valor_frete: "Valor do Frete",
+      valor_desconto: "Desconto",
+      valor_ipi: "Valor do IPI",
+      valor_total_nota: "Valor Total da Nota",
+      chave_acesso: "Chave de Acesso DANFE (44 dígitos)"
+    };
+
+    let htmlBanner = modoManual ? `
+      <div class="col-12 alert alert-info py-2 small mb-2">
+        <i class="fa-solid fa-pen-to-square me-1"></i> <strong>Modo de Entrada Manual:</strong> Preencha os campos e adicione os itens da Nota Fiscal.
+      </div>` : '';
+
+    let htmlBloco1 = `
+      <div class="col-12 mt-2 mb-1">
+        <h6 class="fw-bold text-primary border-bottom pb-1 fs-6"><i class="fa-solid fa-file-invoice me-1"></i> 1. Dados da Nota Fiscal</h6>
+      </div>`;
+
+    ["numero_nota", "nome_fornecedor", "cnpj_fornecedor", "natureza_operacao", "data_emissao", "chave_acesso"].forEach(chave => {
+      const valor = data[chave] || (chave === 'chave_acesso' ? chaveDanfeDigitada : '');
+      const largura = (chave === 'nome_fornecedor' || chave === 'natureza_operacao' || chave === 'chave_acesso') ? 'col-12' : 'col-md-6';
+      const eventOnBlur = (chave === 'numero_nota' || chave === 'cnpj_fornecedor' || chave === 'nome_fornecedor') ? 'onblur="revalidarDuplicidadeCampos()"' : '';
+
+      htmlBloco1 += `
+        <div class="${largura} mb-2">
+          <label class="form-label small fw-bold text-secondary mb-1">${rotulosNF[chave]}</label>
+          <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="${chave}" value="${valor}" ${eventOnBlur}>
+        </div>`;
+    });
+
+    let htmlBloco2 = `
+      <div class="col-12 mt-3 mb-1">
+        <h6 class="fw-bold text-primary border-bottom pb-1 fs-6"><i class="fa-solid fa-calculator me-1"></i> 2. Valores da Nota Fiscal</h6>
+      </div>`;
+
+    ["valor_frete", "valor_desconto", "valor_ipi", "valor_total_nota"].forEach(chave => {
+      const valor = data[chave] || '';
+      htmlBloco2 += `
+        <div class="col-md-3 col-6 mb-2">
+          <label class="form-label small fw-bold text-secondary mb-1">${rotulosNF[chave]}</label>
+          <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="${chave}" value="${valor}">
+        </div>`;
+    });
+
+    let htmlBloco3 = `
+      <div class="col-12 mt-3 mb-1">
+        <div class="d-flex justify-content-between align-items-center border-bottom pb-1">
+          <h6 class="fw-bold text-primary mb-0 fs-6"><i class="fa-solid fa-boxes-stacked me-1"></i> 3. Dados dos Produtos</h6>
+          <button type="button" class="btn btn-outline-success btn-sm py-1 fw-bold" onclick="adicionarNovoItemNF()">
+            <i class="fa-solid fa-plus me-1"></i> Adicionar Outro Item
+          </button>
+        </div>
+      </div>
+      <div class="col-12 mt-2" id="listaItensNF">`;
+
+    const itens = Array.isArray(data.itens) ? data.itens : 
+                  (Array.isArray(data.produtos) ? data.produtos : []);
+
+    const listaItens = itens.length > 0 ? itens : [{ descricao: '', quantidade: '1', valor_unitario: '', valor_total: '', valor_ipi_item: '0,00' }];
+
+    listaItens.forEach((item, idx) => {
+      htmlBloco3 += criarCardItemHTML(idx, item);
+    });
+
+    htmlBloco3 += `</div>
+      <div class="col-12 mt-2 text-end">
+        <button type="button" class="btn btn-outline-success btn-sm fw-bold" onclick="adicionarNovoItemNF()">
+          <i class="fa-solid fa-plus me-1"></i> Adicionar Outro Item
+        </button>
+      </div>`;
+
+    container.innerHTML = htmlBanner + htmlBloco1 + htmlBloco2 + htmlBloco3;
+  }
+
+  function criarCardItemHTML(idx, item) {
+    item = item || {};
+    const desc = item.descricao || item.item || item.produto || '';
+    const qtd = item.quantidade || item.qtd || '1';
+    const vUnit = item.valor_unitario || item.vunit || '';
+    const vTotal = item.valor_total || item.vtotal || '';
+    const vIpi = item.valor_ipi_item || item.vipi || '0,00';
+
+    const botaoRemover = idx > 0 
+      ? `<button type="button" class="btn btn-outline-danger btn-sm py-0 px-2 extra-small" onclick="removerItemNF(${idx})" title="Remover Item"><i class="fa-solid fa-trash-can me-1"></i>Excluir Item</button>` 
+      : '';
+
+    return `
+      <div class="card bg-light border p-2 mb-2 card-item-nf" id="cardItemNF_${idx}">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <span class="fw-bold small text-dark"><i class="fa-solid fa-box text-secondary me-1"></i> Item #${idx + 1}</span>
+          ${botaoRemover}
+        </div>
+        <div class="row g-2">
+          <div class="col-12">
+            <label class="form-label extra-small text-muted mb-0">Descrição do Produto/Serviço</label>
+            <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="item_${idx}_descricao" value="${desc}">
+          </div>
+          <div class="col-md-3 col-6">
+            <label class="form-label extra-small text-muted mb-0">Quantidade</label>
+            <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="item_${idx}_qtd" value="${qtd}">
+          </div>
+          <div class="col-md-3 col-6">
+            <label class="form-label extra-small text-muted mb-0">Valor Unitário (R$)</label>
+            <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="item_${idx}_vunit" value="${vUnit}">
+          </div>
+          <div class="col-md-3 col-6">
+            <label class="form-label extra-small text-muted mb-0">Valor Total (R$)</label>
+            <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="item_${idx}_vtotal" value="${vTotal}">
+          </div>
+          <div class="col-md-3 col-6">
+            <label class="form-label extra-small text-muted mb-0">Valor IPI (R$)</label>
+            <input type="text" class="form-control form-control-sm dynamic-field-nf" data-key="item_${idx}_vipi" value="${vIpi}">
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function adicionarNovoItemNF() {
+    const container = document.getElementById('listaItensNF');
+    if (!container) return;
+
+    const proximoIdx = container.querySelectorAll('.card-item-nf').length;
+    const divTemp = document.createElement('div');
+    divTemp.innerHTML = criarCardItemHTML(proximoIdx, { quantidade: '1', valor_ipi_item: '0,00' });
+    
+    container.appendChild(divTemp.firstElementChild);
+  }
+
+  function removerItemNF(idx) {
+    const card = document.getElementById('cardItemNF_' + idx);
+    if (card) card.remove();
+    renumerarItensNF();
+  }
+
+  function renumerarItensNF() {
+    const container = document.getElementById('listaItensNF');
+    if (!container) return;
+
+    const cards = container.querySelectorAll('.card-item-nf');
+    cards.forEach((card, index) => {
+      card.id = 'cardItemNF_' + index;
+      const spanTitulo = card.querySelector('span.fw-bold');
+      if (spanTitulo) spanTitulo.innerHTML = `<i class="fa-solid fa-box text-secondary me-1"></i> Item #${index + 1}`;
+
+      card.querySelectorAll('.dynamic-field-nf').forEach(input => {
+        const keyAtual = input.getAttribute('data-key');
+        if (keyAtual) {
+          const sulfixoCampo = keyAtual.replace(/^item_\d+_/, '');
+          input.setAttribute('data-key', `item_${index}_${sulfixoCampo}`);
+        }
+      });
+    });
+  }
+
+  function finalizarNotaFiscal() {
+    if (!processoValidoNF) {
+      alert("Atenção: O processo informado não é válido ou não possui solicitações de tombamento cadastradas.");
+      return;
+    }
+
+    if (duplicidadeNFDetectada) {
+      const confirmar = confirm("ATENÇÃO: Foi identificada uma Nota Fiscal com dados idênticos em outro processo.\n\nDeseja realmente prosseguir?");
+      if (!confirmar) return;
+    }
+
+    const camposNF = {};
+    document.querySelectorAll('.dynamic-field-nf').forEach(input => {
+      const key = input.getAttribute('data-key');
+      if (key) camposNF[key] = input.value;
+    });
+
+    const numProc = document.getElementById('inputProcessoNF')?.value || document.getElementById('inputProcesso')?.value || '';
+    const idSolicitacao = document.getElementById('selectSolicitacaoVinculada')?.value || 'Geral';
+
+    const payload = {
+      numProcesso: numProc,
+      idSolicitacaoVinculada: idSolicitacao,
+      opcaoEntrada: opcaoEntradaNF,
+      dadosNF: camposNF,
+      notaFiscalFile: arquivoNFBase64,
+      notaFiscalName: nomeArquivoNF
+    };
+
+    const btnProximo = document.getElementById('btnProximo');
+    if (btnProximo) btnProximo.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(resp => {
+        if (btnProximo) btnProximo.disabled = false;
+        if (resp && resp.success) {
+          if (typeof carregarDashboardTiposEntrada === 'function') carregarDashboardTiposEntrada();
+          exibirOpcoesPosSalvamentoNF(numProc);
+        } else {
+          alert("Erro ao salvar Nota Fiscal: " + (resp.error || "Desconhecido"));
+        }
+      })
+      .withFailureHandler(err => {
+        if (btnProximo) btnProximo.disabled = false;
+        alert("Erro na requisição: " + err);
+      })
+      .salvarNotaFiscalConfirmada(payload);
+  }
+
+  function exibirOpcoesPosSalvamentoNF(numProc) {
+    const footer = document.getElementById('modalFooterNav');
+    if (footer) footer.classList.add('d-none');
+
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById('step' + i + 'Content');
+      if (el) el.classList.add('d-none');
+    }
+
+    document.getElementById('stepTitle').innerText = "Nota Fiscal Gravada com Sucesso!";
+
+    let containerSucesso = document.getElementById('posSalvamentoNFContainer');
+    if (!containerSucesso) {
+      containerSucesso = document.createElement('div');
+      containerSucesso.id = 'posSalvamentoNFContainer';
+      containerSucesso.className = 'text-center py-4';
+      const modalBody = document.querySelector('#modalNovaEntrada .modal-body');
+      if (modalBody) modalBody.appendChild(containerSucesso);
+    } else {
+      containerSucesso.classList.remove('d-none');
+    }
+
+    containerSucesso.innerHTML = `
+      <div class="mb-3 text-success">
+        <i class="fa-solid fa-file-circle-check fa-4x mb-3"></i>
+        <h5 class="fw-bold text-dark">Nota Fiscal registrada com sucesso!</h5>
+        <p class="text-muted small">Processo: <strong>${numProc}</strong></p>
+      </div>
+
+      <div class="alert alert-light border p-3 mb-4">
+        <p class="fw-bold text-secondary mb-2">O que deseja fazer agora?</p>
+        <div class="d-grid gap-2 col-md-10 mx-auto">
+          <button class="btn btn-warning text-dark fw-bold py-2" onclick="prosseguirParaNovaNF('${numProc}')">
+            <i class="fa-solid fa-file-invoice-dollar me-2"></i> Anexar Outra Nota Fiscal a este Processo
+          </button>
+          <button class="btn btn-outline-secondary btn-sm mt-2" onclick="fecharModalAcaoNF()">
+            <i class="fa-solid fa-check me-1"></i> Concluir e Fechar
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function prosseguirParaNovaNF(numProc) {
+    restaurarInterfaceModalNF();
+    abrirModalAnexarNF(numProc);
+  }
+
+  function fecharModalAcaoNF() {
+    restaurarInterfaceModalNF();
+    if (typeof modalInstance !== 'undefined' && modalInstance) modalInstance.hide();
+  }
+
+  function restaurarInterfaceModalNF() {
+    const footer = document.getElementById('modalFooterNav');
+    if (footer) footer.classList.remove('d-none');
+    const containerSucesso = document.getElementById('posSalvamentoNFContainer');
+    if (containerSucesso) containerSucesso.classList.add('d-none');
+  }
+</script>

@@ -1,0 +1,189 @@
+<script>
+let dadosDashboardGlobal = {};
+
+document.addEventListener("DOMContentLoaded", function() {
+  carregarDashboardTiposEntrada();
+});
+
+/**
+ * Busca os dados consolidados do backend
+ */
+function carregarDashboardTiposEntrada() {
+  const containerGrid = document.getElementById('gridTiposEntrada');
+  if (containerGrid) {
+    containerGrid.innerHTML = `
+      <div class="col-12 text-center text-muted py-5">
+        <i class="fa-solid fa-spinner fa-spin fa-2x mb-2"></i>
+        <p class="mb-0 fw-bold">Carregando indicadores dos tipos de entrada...</p>
+      </div>`;
+  }
+
+  google.script.run
+    .withSuccessHandler(renderizarCardsTiposEntrada)
+    .withFailureHandler(err => console.error("Erro ao carregar dashboard:", err))
+    .getDashboardTipoEntradaData();
+}
+
+/**
+ * Renderiza os cards do Tipo de Entrada com os 4 indicadores por fluxo
+ */
+function renderizarCardsTiposEntrada(response) {
+  if (!response || !response.success) return;
+
+  dadosDashboardGlobal = response.dados;
+  const container = document.getElementById('gridTiposEntrada');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  Object.keys(dadosDashboardGlobal).forEach(tipo => {
+    const item = dadosDashboardGlobal[tipo];
+
+    const cardHtml = `
+      <div class="col-lg-4 col-md-6">
+        <div class="card border-0 shadow-sm rounded-3 h-100">
+          <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center pt-3 px-3 pb-1">
+            <h6 class="fw-bold mb-0 text-dark">
+              <i class="fa-solid fa-box text-secondary me-2"></i>${item.tipoEntrada}
+            </h6>
+            <span class="badge bg-primary rounded-pill px-2 py-1">${item.totalProcessos} proc.</span>
+          </div>
+          <div class="card-body p-2">
+            <div class="row g-1 text-center">
+              
+              <!-- 1. Sem Solicitação -->
+              <div class="col-3">
+                <div class="p-2 border rounded bg-light cursor-pointer status-box h-100" 
+                     onclick="abrirDetalhamento('${item.tipoEntrada}', 'semSolicitacao')" 
+                     title="Clique para ver os processos sem solicitação">
+                  <div class="fs-6 fw-bold text-danger">${item.semSolicitacao}</div>
+                  <div class="extra-small text-muted text-truncate">
+                    <i class="fa-solid fa-file-circle-xmark text-danger me-1"></i>Sem Solic.
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Sem NF -->
+              <div class="col-3">
+                <div class="p-2 border rounded bg-light cursor-pointer status-box h-100" 
+                     onclick="abrirDetalhamento('${item.tipoEntrada}', 'semNF')"
+                     title="Clique para ver os processos com solicitação mas sem NF">
+                  <div class="fs-6 fw-bold text-warning">${item.semNF}</div>
+                  <div class="extra-small text-muted text-truncate">
+                    <i class="fa-solid fa-file-invoice-dollar text-warning me-1"></i>Sem NF
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. Com NF (Não Processado) -->
+              <div class="col-3">
+                <div class="p-2 border rounded bg-light cursor-pointer status-box h-100" 
+                     onclick="abrirDetalhamento('${item.tipoEntrada}', 'comNF')"
+                     title="Clique para ver os processos com NF pendentes de finalização">
+                  <div class="fs-6 fw-bold text-primary">${item.comNF}</div>
+                  <div class="extra-small text-muted text-truncate">
+                    <i class="fa-solid fa-file-circle-check text-primary me-1"></i>Com NF
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. Processados -->
+              <div class="col-3">
+                <div class="p-2 border rounded bg-light cursor-pointer status-box h-100" 
+                     onclick="abrirDetalhamento('${item.tipoEntrada}', 'processados')"
+                     title="Clique para ver os processos concluídos">
+                  <div class="fs-6 fw-bold text-success">${item.processados}</div>
+                  <div class="extra-small text-muted text-truncate">
+                    <i class="fa-solid fa-circle-check text-success me-1"></i>Concluídos
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.innerHTML += cardHtml;
+  });
+}
+
+/**
+ * Abre o Modal detalhando a quantidade de Solicitações e Notas Fiscais do Processo
+ */
+function abrirDetalhamento(tipoEntrada, filtroCategoria) {
+  const dadosTipo = dadosDashboardGlobal[tipoEntrada];
+  if (!dadosTipo) return;
+
+  const titulos = {
+    semSolicitacao: "Sem Solicitação de Tombamento",
+    semNF: "Com Solicitação de Tombamento, mas Sem Nota Fiscal",
+    comNF: "Com Nota Fiscal (Aguardando Processamento)",
+    processados: "Processados / Tombados"
+  };
+
+  document.getElementById('modalDetalhamentoTitulo').innerHTML = `
+    <i class="fa-solid fa-folder-open me-2"></i> ${tipoEntrada} — <span class="fw-normal">${titulos[filtroCategoria] || 'Todos'}</span>
+  `;
+
+  const tbody = document.getElementById('tbodyDetalhamentoProcessos');
+  tbody.innerHTML = '';
+
+  const processosFiltrados = dadosTipo.listaProcessos.filter(p => p.categoriaStatus === filtroCategoria);
+
+  if (processosFiltrados.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center text-muted py-4">Nenhum processo encontrado nesta categoria.</td>
+      </tr>`;
+  } else {
+    processosFiltrados.forEach(proc => {
+      const badgeSolic = proc.qtdSolicitacoes > 0 
+        ? `<span class="badge bg-info text-dark border"><i class="fa-solid fa-file-pdf me-1"></i> ${proc.qtdSolicitacoes} solic.</span>`
+        : `<span class="badge bg-light text-muted border">Nenhuma</span>`;
+
+      const badgeNF = proc.qtdNotasFiscais > 0 
+        ? `<span class="badge bg-warning text-dark border"><i class="fa-solid fa-file-invoice me-1"></i> ${proc.qtdNotasFiscais} NF(s)</span>`
+        : `<span class="badge bg-light text-muted border">Nenhuma</span>`;
+
+      tbody.innerHTML += `
+        <tr>
+          <td class="fw-bold text-dark">${proc.numProcesso}</td>
+          <td>${proc.dataEnvio}</td>
+          <td><span class="badge bg-secondary-subtle text-dark border">${proc.tipoEntrada}</span></td>
+          <td class="text-center">${badgeSolic}</td>
+          <td class="text-center">${badgeNF}</td>
+          <td class="text-center">
+            <span class="badge ${getBadgeColor(proc.categoriaStatus)}">${getLabelStatus(proc.categoriaStatus)}</span>
+          </td>
+        </tr>`;
+    });
+  }
+
+  const modalEl = document.getElementById('modalDetalhamentoProcessos');
+  const bs = window.bootstrap || bootstrap;
+  const modalInstance = bs.Modal.getOrCreateInstance(modalEl);
+  modalInstance.show();
+}
+
+function getBadgeColor(categoria) {
+  switch (categoria) {
+    case 'semSolicitacao': return 'bg-danger';
+    case 'semNF': return 'bg-warning text-dark';
+    case 'comNF': return 'bg-primary';
+    case 'processados': return 'bg-success';
+    default: return 'bg-secondary';
+  }
+}
+
+function getLabelStatus(categoria) {
+  switch (categoria) {
+    case 'semSolicitacao': return 'Sem Solicitação';
+    case 'semNF': return 'Sem NF';
+    case 'comNF': return 'Com NF (Pendente)';
+    case 'processados': return 'Concluído';
+    default: return categoria;
+  }
+}
+</script>

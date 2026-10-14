@@ -1,0 +1,266 @@
+<div class="modal fade" id="modalNovaEntrada" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-dark text-white">
+        <h5 class="modal-title fw-bold">
+          <i class="fa-solid fa-box-archive me-2"></i> <span id="modalStageBadge" class="badge bg-primary me-2">Etapa 1</span> <span id="stepTitle">Cadastro do Processo</span>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-4">
+
+        <!-- ========================================== -->
+        <!-- ETAPA 1: CADASTRO DO PROCESSO              -->
+        <!-- ========================================== -->
+        <div id="step1Content" class="step-content">
+          <div class="alert alert-primary py-2 small mb-3">
+            <i class="fa-solid fa-info-circle me-1"></i> <strong>Etapa 1 de 3:</strong> Cadastre as informações iniciais do processo para iniciar o fluxo.
+          </div>
+          <h6 class="fw-bold mb-3 border-bottom pb-2"><i class="fa-solid fa-folder-plus text-primary me-2"></i>Informações do Processo</h6>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Número do Processo *</label>
+            <input type="text" class="form-control" id="inputProcesso" placeholder="Ex: 23076.053242/2026-55" required>
+          </div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Data de Envio do Processo *</label>
+              <input type="date" class="form-control" id="inputDataEnvio" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Tipo de Entrada *</label>
+              <select class="form-select" id="selectTipoEntrada" required>
+                <option value="" selected disabled>Selecione...</option>
+                <option value="Empenho">Empenho</option>
+                <option value="Edital Interno">Edital Interno</option>
+                <option value="FADE">FADE / FAD</option>
+                <option value="CNPq">CNPq</option>
+                <option value="FACEPE">FACEPE</option>
+                <option value="Doação">Doação</option>
+                <option value="Pré-existente">Pré-existente</option>
+                <option value="FAPESP">FAPESP</option>
+                <option value="Outros Fomentos">Outros Fomentos</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tela de Decisão (Pós-Cadastro do Processo) -->
+        <div id="stepDecisaoSolicitacao" class="step-content d-none text-center py-3">
+          <div class="mb-3 text-success">
+            <i class="fa-solid fa-circle-check fa-3x mb-2"></i>
+            <h5 class="fw-bold text-dark">Processo Cadastrado com Sucesso!</h5>
+            <p class="text-muted small">Número do Processo: <strong id="lblProcessoCadastrado">-</strong></p>
+          </div>
+
+          <div class="card bg-light border p-4 col-md-11 mx-auto shadow-sm">
+            <h6 class="fw-bold text-secondary mb-3"><i class="fa-solid fa-route me-2"></i>Qual a próxima etapa que deseja realizar?</h6>
+            <div class="d-grid gap-2 col-md-11 mx-auto">
+              <button class="btn btn-primary fw-bold py-2" onclick="iniciarEtapaSolicitacao()">
+                <i class="fa-solid fa-file-circle-plus me-2"></i> Ir para Etapa 2: Cadastrar Solicitação de Tombamento
+              </button>
+              <button class="btn btn-warning text-dark fw-bold py-2" onclick="iniciarEtapaNotaFiscalDireta()">
+                <i class="fa-solid fa-file-invoice-dollar me-2"></i> Ir para Etapa 3: Cadastrar Nota Fiscal
+              </button>
+              <button class="btn btn-outline-secondary btn-sm mt-2" onclick="fecharModalAcao()">
+                <i class="fa-solid fa-check me-1"></i> Apenas Concluir Cadastro
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+<!-- ETAPA 2: SOLICITAÇÃO DE TOMBAMENTO         -->
+<!-- ========================================== -->
+<div id="step2Content" class="step-content d-none">
+  <div class="alert alert-info py-2 small mb-3">
+    <i class="fa-solid fa-info-circle me-1"></i> <strong>Anexo Direto:</strong> Digite o número do processo para validar se ele já está cadastrado no sistema.
+  </div>
+
+  <!-- Campo do Processo com Validação -->
+  <div class="card bg-light border p-3 mb-3">
+    <label class="form-label fw-bold text-dark mb-1">
+      <i class="fa-solid fa-folder me-1 text-primary"></i> Número do Processo *
+    </label>
+    <div class="input-group">
+      <input type="text" class="form-control" id="inputProcesso" placeholder="Ex: 23076.053242/2026-55" onblur="verificarProcessoExistente(this.value)">
+      <button class="btn btn-outline-primary" type="button" onclick="verificarProcessoExistente(document.getElementById('inputProcesso').value)">
+        <i class="fa-solid fa-magnifying-glass me-1"></i> Validar
+      </button>
+    </div>
+    <!-- Feedback Visual da Validação -->
+    <div id="feedbackProcesso" class="mt-2 small d-none"></div>
+  </div>
+
+  <h6 class="fw-bold mb-3 border-bottom pb-2">Upload da Solicitação de Tombamento</h6>
+  <div class="upload-box border-dashed rounded p-4 text-center my-3 bg-light" id="boxUploadSolicitacao">
+    <i class="fa-solid fa-cloud-arrow-up fs-1 text-primary mb-2"></i>
+    <h6>Selecione o PDF da Solicitação</h6>
+    <input type="file" id="inputArquivoSolicitacao" accept="application/pdf" class="d-none" onchange="handleFileSelectSolicitacao(this)">
+    <button type="button" class="btn btn-outline-primary my-2 fw-bold" id="btnSelectFileSolicitacao" onclick="document.getElementById('inputArquivoSolicitacao').click()">
+      <i class="fa-solid fa-folder-open me-1"></i> Selecionar Arquivo
+    </button>
+  </div>
+  <div id="fileInfo" class="alert alert-info d-none d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-file-pdf me-2"></i> <strong id="fileName">arquivo.pdf</strong></span>
+    <button type="button" class="btn-close" onclick="resetFileSolicitacao()"></button>
+  </div>
+  <div id="aiLoading" class="text-center py-3 d-none">
+    <div class="spinner-border text-primary mb-2"></div>
+    <h6 class="fw-bold text-primary">Interpretando PDF via Gemini IA...</h6>
+  </div>
+</div>
+
+        <!-- Passo 3: Conferência da Solicitação -->
+        <div id="step3Content" class="step-content d-none">
+          <div class="alert alert-success py-2 mb-3"><i class="fa-solid fa-circle-check me-2"></i> Leitura da Solicitação finalizada! Verifique os dados abaixo:</div>
+          <div id="dynamicFieldsContainer" class="row g-3"></div>
+        </div>
+
+        <!-- TELA DE DECISÃO (PÓS-SALVAMENTO DA SOLICITAÇÃO) -->
+        <div id="stepDecisaoPosSolicitacao" class="step-content d-none text-center py-3">
+          <div class="mb-3 text-success">
+            <i class="fa-solid fa-circle-check fa-3x mb-2"></i>
+            <h5 class="fw-bold text-dark">Solicitação Vinculada com Sucesso!</h5>
+            <p class="text-muted small">O que você deseja fazer agora?</p>
+          </div>
+
+          <div class="card bg-light border p-4 col-md-11 mx-auto shadow-sm">
+            <div class="d-grid gap-2 col-md-11 mx-auto">
+              <!-- NOVO BOTÃO -->
+              <button type="button" class="btn btn-outline-primary fw-bold py-2" onclick="inserirOutraSolicitacao()">
+                <i class="fa-solid fa-file-circle-plus me-2"></i> Inserir outra Solicitação neste Processo
+              </button>
+
+              <!-- Ir para Etapa 3 -->
+              <button type="button" class="btn btn-warning text-dark fw-bold py-2" onclick="iniciarEtapaNotaFiscalDireta()">
+                <i class="fa-solid fa-file-invoice-dollar me-2"></i> Ir para Etapa 3: Anexar Nota Fiscal
+              </button>
+
+              <!-- Concluir e Fechar -->
+              <button type="button" class="btn btn-secondary fw-bold py-2 mt-2" data-bs-dismiss="modal">
+                <i class="fa-solid fa-check me-1"></i> Concluir e Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- ETAPA 3: CADASTRO DA NOTA FISCAL           -->
+        <!-- ========================================== -->
+        <!-- Passo 4: Escolha do Método de Entrada e Captura -->
+        <div id="step4Content" class="step-content d-none">
+          
+          <!-- Bloco Superior: Busca e Seleção do Processo -->
+          <div id="containerBuscaProcessoNF"></div>
+
+          <hr class="my-3">
+
+          <div class="text-center mb-3">
+            <h6 class="fw-bold text-dark mb-1"><i class="fa-solid fa-sliders text-primary me-2"></i>Como deseja realizar o cadastro da Nota Fiscal?</h6>
+            <p class="text-muted small mb-0">Escolha uma das opções abaixo para prosseguir com o registro:</p>
+          </div>
+
+          <!-- Cards de Escolha das 3 Opções -->
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <div class="card card-opcao-nf h-100 border text-center p-3 cursor-pointer rounded-3 shadow-sm" id="cardOpcaoUpload" onclick="selecionarOpcaoEntradaNF('upload')">
+                <i class="fa-solid fa-file-arrow-up fs-2 text-primary mb-2"></i>
+                <h6 class="fw-bold fs-6 mb-1 text-dark">Upload de Arquivo</h6>
+                <p class="extra-small text-muted mb-0">Enviar PDF/Imagem da NF com leitura automática por IA.</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card card-opcao-nf h-100 border text-center p-3 cursor-pointer rounded-3 shadow-sm" id="cardOpcaoChave" onclick="selecionarOpcaoEntradaNF('chave')">
+                <i class="fa-solid fa-key fs-2 text-warning mb-2"></i>
+                <h6 class="fw-bold fs-6 mb-1 text-dark">Chave da Nota Fiscal</h6>
+                <p class="extra-small text-muted mb-0">Digitar/colar chave de 44 dígitos da Consulta DANFE.</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card card-opcao-nf h-100 border text-center p-3 cursor-pointer rounded-3 shadow-sm" id="cardOpcaoManual" onclick="selecionarOpcaoEntradaNF('manual')">
+                <i class="fa-solid fa-keyboard fs-2 text-success mb-2"></i>
+                <h6 class="fw-bold fs-6 mb-1 text-dark">Cadastro Manual</h6>
+                <p class="extra-small text-muted mb-0">Preencher os dados e produtos diretamente no formulário.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub-Painel OPÇÃO 1: Upload de Arquivo -->
+          <div id="painelOpcaoUpload" class="painel-metodo-nf d-none">
+            <div class="card border-dashed p-4 text-center bg-light mb-3" id="dropAreaNF">
+              <i class="fa-solid fa-cloud-arrow-up fs-2 text-secondary mb-2"></i>
+              <p class="mb-1 text-secondary small fw-bold">Arraste a Nota Fiscal (PDF ou Imagem) aqui ou clique para selecionar</p>
+              <input type="file" id="inputNotaFiscal" accept=".pdf,image/*" class="d-none" onchange="selecionarArquivoNF(this)">
+              <button type="button" class="btn btn-outline-primary btn-sm mt-2 fw-bold" onclick="document.getElementById('inputNotaFiscal').click()">
+                <i class="fa-solid fa-folder-open me-1"></i> Selecionar Arquivo
+              </button>
+            </div>
+
+            <div id="nfFilePreview" class="alert alert-success d-none d-flex align-items-center justify-content-between p-2 mb-3">
+              <div class="d-flex align-items-center me-2 overflow-hidden">
+                <i class="fa-solid fa-file-pdf fs-4 text-danger me-2"></i>
+                <div class="text-truncate">
+                  <strong id="nfFileName" class="d-block small text-truncate">nota_fiscal.pdf</strong>
+                  <span id="nfFileSize" class="extra-small text-muted">0 KB</span>
+                </div>
+              </div>
+              <button type="button" class="btn-close btn-sm" onclick="removerArquivoNF()"></button>
+            </div>
+
+            <div id="aiNFLoading" class="text-center py-3 d-none">
+              <div class="spinner-border text-primary mb-2"></div>
+              <h6 class="fw-bold text-primary">Analisando Nota Fiscal via Gemini IA...</h6>
+            </div>
+          </div>
+
+          <!-- Sub-Painel OPÇÃO 2: Consulta DANFE via Chave -->
+          <div id="painelOpcaoChave" class="painel-metodo-nf d-none">
+            <div class="card bg-light border p-3 mb-3">
+              <label class="form-label small fw-bold text-dark mb-1">
+                <i class="fa-solid fa-barcode text-warning me-1"></i> Chave de Acesso da NF-e (44 dígitos) <span class="text-danger">*</span>
+              </label>
+              <div class="input-group">
+                <input type="text" id="inputChaveDanfe" class="form-control form-control-sm font-monospace" placeholder="Ex: 3526 1000 1234 5678 0001 5500 1000 0001 2310 0000 1234" maxlength="54" oninput="formatarInputChaveDanfe(this)">
+                <button class="btn btn-warning btn-sm text-dark fw-bold" type="button" onclick="consultarChaveDanfe()">
+                  <i class="fa-solid fa-magnifying-glass me-1"></i> Consultar DANFE
+                </button>
+              </div>
+              <div class="extra-small text-muted mt-1">
+                <i class="fa-solid fa-circle-info me-1"></i> Cole a chave com ou sem espaços. O sistema extrairá os dados e checará duplicidades.
+              </div>
+            </div>
+            <div id="danfeLoading" class="text-center py-3 d-none">
+              <div class="spinner-border text-warning mb-2"></div>
+              <h6 class="fw-bold text-warning">Buscando dados da Nota Fiscal pela Chave DANFE...</h6>
+            </div>
+          </div>
+
+          <!-- Sub-Painel OPÇÃO 3: Inclusão Manual -->
+          <div id="painelOpcaoManual" class="painel-metodo-nf d-none text-center py-2">
+            <div class="alert alert-info py-2 small mb-3">
+              <i class="fa-solid fa-keyboard me-1"></i> Você optou pelo <strong>Cadastro Manual</strong>. Clique no botão abaixo para abrir os formulários para digitação.
+            </div>
+            <button type="button" class="btn btn-success fw-bold px-4 py-2" onclick="preencherNFManualmente()">
+              <i class="fa-solid fa-pen-to-square me-2"></i> Abrir Formulário de Preenchimento Manual
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Passo 5: Conferência e Edição dos Dados da Nota Fiscal (Unificado) -->
+        <div id="step5Content" class="step-content d-none">
+          <div class="alert alert-success py-2 mb-3"><i class="fa-solid fa-circle-check me-2"></i> Conferência dos Dados da Nota Fiscal. Verifique e complete as informações abaixo:</div>
+          <div id="dynamicNFFieldsContainer" class="row g-3"></div>
+        </div>
+
+      </div>
+
+      <!-- Rodapé com Navegação dos Passos -->
+      <div class="modal-footer bg-light" id="modalFooterNav">
+        <button type="button" class="btn btn-secondary" id="btnAnterior" onclick="passoAnteriorGlobal()" disabled>Anterior</button>
+        <button type="button" class="btn btn-primary" id="btnProximo" onclick="proximoPassoGlobal()">Próximo <i class="fa-solid fa-arrow-right ms-1"></i></button>
+      </div>
+    </div>
+  </div>
+</div>
